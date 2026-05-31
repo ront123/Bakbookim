@@ -42,6 +42,13 @@ function cleanPhone(raw: string) {
   return '972' + digits.replace(/^0/, '').slice(-9)
 }
 
+function cleanStation(raw: string) {
+  if (!raw) return ''
+  return raw
+    .replace(/^(נקודות חלוקה|נקודת חלוקה|תחנת חלוקה|תחנה|station|distribution):\s*/i, '')
+    .trim()
+}
+
 function parseExcel(file: File): Promise<{ rows: any[]; sheetName: string }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -62,7 +69,10 @@ function parseExcel(file: File): Promise<{ rows: any[]; sheetName: string }> {
         const phoneCol   = headers.findIndex(h => /phone|mobile|נייד|טלפון/i.test(h))
         const nameCol    = headers.findIndex(h => /shipping.?name|customer.?name|שם.?לקוח/i.test(h))
         const orderCol   = headers.findIndex(h => /^name$/i.test(h) || /order.?num|מספר/i.test(h))
-        const stationCol = headers.findIndex(h => /תחנת חלוקה|נקודת חלוקה|תחנה|נקודה|station|distribution/i.test(h))
+        let stationCol   = headers.findIndex(h => /תחנת חלוקה|נקודת חלוקה|תחנה|נקודה|station|distribution/i.test(h))
+        if (stationCol === -1) {
+          stationCol     = headers.findIndex(h => /תוויות שורה|Row Labels/i.test(h))
+        }
         const excludeCols = new Set(['תוויות שורה','Row Labels','Name','Shipping Name','Customer Name','Billing Phone','Phone','Email','סכום כולל'])
 
         const rows = raw.slice(1)
@@ -83,8 +93,8 @@ function parseExcel(file: File): Promise<{ rows: any[]; sheetName: string }> {
             const orderNumber = orderCol >= 0 ? String(obj[headers[orderCol]] || '') :
               String(obj['Name'] || '')
 
-            const stationKey = stationCol >= 0 ? headers[stationCol] : Object.keys(obj).find(k => /תחנת חלוקה|נקודת חלוקה|תחנה|נקודה|station|distribution/i.test(k))
-            const distributionStation = stationKey ? String(obj[stationKey] || '') : ''
+            const stationKey = stationCol >= 0 ? headers[stationCol] : Object.keys(obj).find(k => /תחנת חלוקה|נקודת חלוקה|תחנה|נקודה|station|distribution|תוויות שורה|Row Labels/i.test(k))
+            const distributionStation = stationKey ? cleanStation(String(obj[stationKey] || '')) : ''
 
             const excludeSet = new Set([
               ...excludeCols,

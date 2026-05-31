@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
 }
 
 // ─── POST /api/orders ─────────────────────────────────────
-// Efficient bulk import: 2 DB calls total regardless of row count
+// Efficient bulk import with merge capabilities: 2 DB calls total
 export async function POST(req: NextRequest) {
   try {
     const supabase = createAdminClient()
@@ -65,35 +65,87 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ added: 0, existing: 0, errors: skipped })
     }
 
-    // ── Step 1: Find which (order_number, phone) pairs already exist ──
-    const pairs = records.map(r => `${r.order_number}__${r.phone}`)
+    // ── Step 1: Merge duplicates within the incoming records list first ──
+    const mergedIncoming = new Map<string, any>()
+    for (const r of records) {
+      const key = `${r.order_number}__${r.phone}`
+      if (mergedIncoming.has(key)) {
+        const existingIncoming = mergedIncoming.get(key)
+        existingIncoming.items = mergeItems(existingIncoming.items, r.items)
+        if (!existingIncoming.distribution_station && r.distribution_station) {
+          existingIncoming.distribution_station = r.distribution_station
+        }
+        existingIncoming.raw_row = { ...existingIncoming.raw_row, ...r.raw_row }
+      } else {
+        mergedIncoming.set(key, { ...r })
+      }
+    }
+    const uniqueIncoming = Array.from(mergedIncoming.values())
 
+    // ── Step 2: Find which records already exist in the database ──
     const { data: existing } = await supabase
       .from('orders')
-      .select('order_number, phone')
-      .in('order_number', records.map(r => r.order_number))
+      .select('id, order_number, phone, items, distribution_station, raw_row, whatsapp_sent, delivered')
+      .in('order_number', uniqueIncoming.map(r => r.order_number))
 
-    const existingKeys = new Set(
-      (existing ?? []).map((r: any) => `${r.order_number}__${r.phone}`)
-    )
+    const existingMap = new Map<string, any>()
+    for (const row of (existing ?? [])) {
+      existingMap.set(`${row.order_number}__${row.phone}`, row)
+    }
 
-    const newRecords = records.filter(r => !existingKeys.has(`${r.order_number}__${r.phone}`))
-    const existingCount = records.length - newRecords.length
-
-    // ── Step 2: Bulk insert only new records ──
+    // ── Step 3: Compute final records to upsert (merging with DB data if exist) ──
+    const finalRecords: any[] = []
     let added = 0
-    let errors = skipped
+    let existingCount = 0
 
-    if (newRecords.length > 0) {
+    for (const incoming of uniqueIncoming) {
+      const key = `${incoming.order_number}__${incoming.phone}`
+      if (existingMap.has(key)) {
+        existingCount++
+        const dbRecord = existingMap.get(key)
+        finalRecords.push({
+          id: dbRecord.id, // keep the database row ID
+          order_number: dbRecord.order_number,
+          customer_name: dbRecord.customer_name || incoming.customer_name,
+          phone: dbRecord.phone,
+          distribution_station: dbRecord.distribution_station || incoming.distribution_station,
+          items: mergeItems(dbRecord.items, incoming.items),
+          raw_row: { ...dbRecord.raw_row, ...incoming.raw_row },
+          sheet_name: incoming.sheet_name,
+          excel_source: incoming.excel_source,
+          whatsapp_sent: dbRecord.whatsapp_sent,
+          delivered: dbRecord.delivered,
+          updated_at: new Date().toISOString()
+        })
+      } else {
+        added++
+        finalRecords.push({
+          order_number: incoming.order_number,
+          customer_name: incoming.customer_name,
+          phone: incoming.phone,
+          distribution_station: incoming.distribution_station,
+          items: incoming.items,
+          raw_row: incoming.raw_row,
+          sheet_name: incoming.sheet_name,
+          excel_source: incoming.excel_source,
+          whatsapp_sent: false,
+          delivered: false
+        })
+      }
+    }
+
+    // ── Step 4: Bulk upsert combined list ──
+    let errors = skipped
+    if (finalRecords.length > 0) {
       const { error } = await supabase
         .from('orders')
-        .insert(newRecords)
+        .upsert(finalRecords, { onConflict: 'order_number,phone' })
 
       if (error) {
-        console.error('bulk insert error:', error)
-        errors += newRecords.length
-      } else {
-        added = newRecords.length
+        console.error('bulk upsert error:', error)
+        errors += finalRecords.length
+        added = 0
+        existingCount = 0
       }
     }
 
@@ -102,4 +154,25 @@ export async function POST(req: NextRequest) {
     console.error('import error:', e)
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
+}
+
+// ─── Helper: mergeItems ────────────────────────────────────
+function mergeItems(existingItems: any[], newItems: any[]) {
+  const merged: Record<string, number> = {}
+  
+  const parseQty = (q: any): number => {
+    const num = Number(q)
+    return isNaN(num) ? 0 : num
+  }
+
+  const itemsList = [...(existingItems || []), ...(newItems || [])]
+  for (const item of itemsList) {
+    if (!item || !item.name) continue
+    const name = String(item.name).trim()
+    merged[name] = (merged[name] || 0) + parseQty(item.qty)
+  }
+
+  return Object.entries(merged)
+    .filter(([_, qty]) => qty > 0)
+    .map(([name, qty]) => ({ name, qty }))
 }
