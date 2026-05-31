@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
 
     let query = supabase
       .from('orders')
-      .select('*')
+      .select('id, order_number, customer_name, phone, items, distribution_station, whatsapp_sent, whatsapp_sent_at, delivered, delivered_at, created_at')
       .order('created_at', { ascending: false })
 
     if (customer) query = query.ilike('customer_name', `%${customer}%`)
@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
     // ── Step 2: Find which records already exist in the database ──
     const { data: existing } = await supabase
       .from('orders')
-      .select('id, order_number, phone, items, distribution_station, raw_row, whatsapp_sent, delivered')
+      .select('id, order_number, phone, items, distribution_station, whatsapp_sent, delivered')
       .in('order_number', uniqueIncoming.map(r => r.order_number))
 
     const existingMap = new Map<string, any>()
@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
           phone: dbRecord.phone,
           distribution_station: dbRecord.distribution_station || incoming.distribution_station,
           items: mergeItems(dbRecord.items, incoming.items),
-          raw_row: { ...dbRecord.raw_row, ...incoming.raw_row },
+          raw_row: incoming.raw_row,
           sheet_name: incoming.sheet_name,
           excel_source: incoming.excel_source,
           whatsapp_sent: dbRecord.whatsapp_sent,
