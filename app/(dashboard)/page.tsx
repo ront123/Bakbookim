@@ -17,6 +17,7 @@ type Order = {
   order_number: string
   customer_name: string
   phone: string
+  distribution_station?: string
   items: { name: string; qty: string | number }[]
   raw_row: Record<string, any>
   whatsapp_sent: boolean
@@ -61,6 +62,7 @@ function parseExcel(file: File): Promise<{ rows: any[]; sheetName: string }> {
         const phoneCol   = headers.findIndex(h => /phone|mobile|נייד|טלפון/i.test(h))
         const nameCol    = headers.findIndex(h => /shipping.?name|customer.?name|שם.?לקוח/i.test(h))
         const orderCol   = headers.findIndex(h => /^name$/i.test(h) || /order.?num|מספר/i.test(h))
+        const stationCol = headers.findIndex(h => /תחנת חלוקה|נקודת חלוקה|תחנה|נקודה|station|distribution/i.test(h))
         const excludeCols = new Set(['תוויות שורה','Row Labels','Name','Shipping Name','Customer Name','Billing Phone','Phone','Email','סכום כולל'])
 
         const rows = raw.slice(1)
@@ -81,12 +83,32 @@ function parseExcel(file: File): Promise<{ rows: any[]; sheetName: string }> {
             const orderNumber = orderCol >= 0 ? String(obj[headers[orderCol]] || '') :
               String(obj['Name'] || '')
 
+            const stationKey = stationCol >= 0 ? headers[stationCol] : Object.keys(obj).find(k => /תחנת חלוקה|נקודת חלוקה|תחנה|נקודה|station|distribution/i.test(k))
+            const distributionStation = stationKey ? String(obj[stationKey] || '') : ''
+
+            const excludeSet = new Set([
+              ...excludeCols,
+              headers[phoneCol],
+              headers[nameCol],
+              headers[orderCol],
+              headers[stationCol],
+              phoneKey,
+              stationKey
+            ].filter(Boolean))
+
             const items = headers
-              .filter(h => !excludeCols.has(h))
+              .filter(h => !excludeSet.has(h))
               .filter(h => obj[h] !== undefined && obj[h] !== '' && obj[h] !== 0 && obj[h] !== '0')
               .map(h => ({ name: h, qty: obj[h] }))
 
-            return { order_number: orderNumber, customer_name: customerName, phone, items, raw_row: obj }
+            return {
+              order_number: orderNumber,
+              customer_name: customerName,
+              phone,
+              distribution_station: distributionStation,
+              items,
+              raw_row: obj
+            }
           })
 
         resolve({ rows, sheetName })
@@ -153,6 +175,8 @@ export default function OrdersPage() {
   const [settings, setSettings]       = useState<Settings | null>(null)
   const [customerSearch, setCustomerSearch] = useState('')
   const [filter, setFilter]           = useState('all')
+  const [selectedStation, setSelectedStation] = useState('')
+  const [stations, setStations]       = useState<string[]>([])
   const [dragging, setDragging]       = useState(false)
   const [previewOrder, setPreviewOrder] = useState<Order | null>(null)
   const [bulkOrders, setBulkOrders]   = useState<Order[]>([])
@@ -179,18 +203,26 @@ export default function OrdersPage() {
     })
   }
 
-  async function fetchOrders(search = customerSearch, f = filter) {
+  async function fetchOrders(search = customerSearch, f = filter, st = selectedStation) {
     setLoading(true)
     const params = new URLSearchParams({ filter: f })
     if (search) params.set('customer', search)
+    if (st) params.set('station', st)
     const res = await fetch(`/api/orders?${params}`)
     const data: Order[] = await res.json()
-    setOrders(Array.isArray(data) ? data : [])
+    const validOrders = Array.isArray(data) ? data : []
+    setOrders(validOrders)
 
     // Build autocomplete suggestions from loaded data
     if (!search) {
-      const names = [...new Set(data.map(o => o.customer_name).filter(Boolean))]
+      const names = [...new Set(validOrders.map(o => o.customer_name).filter(Boolean))]
       setCustomerSuggestions(names.sort())
+    }
+
+    // Build unique list of stations from data when st is empty (to preserve options dropdown)
+    if (!st) {
+      const uniqueStations = [...new Set(validOrders.map(o => o.distribution_station).filter(Boolean))]
+      setStations(uniqueStations.sort() as string[])
     }
     setLoading(false)
   }
@@ -198,12 +230,12 @@ export default function OrdersPage() {
   // ── Filters ───────────────────────────────────────────
   async function applyFilter(f: string) {
     setFilter(f); setSelected(new Set())
-    await fetchOrders(customerSearch, f)
+    await fetchOrders(customerSearch, f, selectedStation)
   }
 
   async function applySearch(s: string) {
     setCustomerSearch(s); setShowSuggestions(false); setSelected(new Set())
-    await fetchOrders(s, filter)
+    await fetchOrders(s, filter, selectedStation)
   }
 
   // ── Import Excel ──────────────────────────────────────
@@ -220,7 +252,9 @@ export default function OrdersPage() {
       })
       const result = await res.json()
       setImportResult(result)
-      await fetchOrders()
+      // Reset selected station so the options get refreshed
+      setSelectedStation('')
+      await fetchOrders(customerSearch, filter, '')
     } catch (e: any) {
       alert('שגיאה בקריאת הקובץ: ' + e.message)
     }
@@ -456,6 +490,46 @@ export default function OrdersPage() {
           )}
         </div>
 
+        {/* Station filter */}
+        <div style={{ position: 'relative', minWidth: 160 }}>
+          <select
+            value={selectedStation}
+            onChange={e => {
+              const val = e.target.value
+              setSelectedStation(val)
+              fetchOrders(customerSearch, filter, val)
+            }}
+            style={{
+              width: '100%',
+              padding: '0.55rem 1.25rem 0.55rem 2rem',
+              background: 'var(--color-card)',
+              border: '1px solid var(--color-border)',
+              borderRadius: '10px',
+              color: selectedStation ? 'var(--color-text)' : 'var(--color-text-dim)',
+              fontSize: '0.875rem',
+              outline: 'none',
+              fontFamily: 'inherit',
+              cursor: 'pointer',
+              appearance: 'none',
+              textAlign: 'right',
+              direction: 'rtl',
+            }}
+          >
+            <option value="">כל התחנות</option>
+            {stations.map(st => (
+              <option key={st} value={st}>{st}</option>
+            ))}
+          </select>
+          <ChevronDown size={14} style={{
+            position: 'absolute',
+            left: '0.75rem',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            color: 'var(--color-text-muted)',
+            pointerEvents: 'none',
+          }} />
+        </div>
+
         {/* Status filter buttons */}
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
           {filterButtons.map(({ key, label }) => (
@@ -514,7 +588,7 @@ export default function OrdersPage() {
                       style={{ accentColor: 'var(--color-accent)', cursor: 'pointer' }}
                     />
                   </th>
-                  {['הזמנה', 'לקוח', 'טלפון', 'פריטים', 'סטטוס', 'פעולות'].map(h => (
+                  {['הזמנה', 'לקוח', 'תחנה', 'טלפון', 'פריטים', 'סטטוס', 'פעולות'].map(h => (
                     <th key={h} style={{ padding: '0.75rem 1rem', textAlign: 'right', color: 'var(--color-text-dim)', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -545,6 +619,11 @@ export default function OrdersPage() {
                     {/* Customer */}
                     <td style={{ padding: '0.75rem 1rem', fontWeight: 600, whiteSpace: 'nowrap' }}>
                       {order.customer_name || '—'}
+                    </td>
+
+                    {/* Station */}
+                    <td style={{ padding: '0.75rem 1rem', color: 'var(--color-text-dim)', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                      {order.distribution_station || '—'}
                     </td>
 
                     {/* Phone */}

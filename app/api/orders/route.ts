@@ -8,6 +8,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const customer = searchParams.get('customer') || ''
     const filter   = searchParams.get('filter')   || 'all'
+    const station  = searchParams.get('station')  || ''
 
     let query = supabase
       .from('orders')
@@ -15,6 +16,7 @@ export async function GET(req: NextRequest) {
       .order('created_at', { ascending: false })
 
     if (customer) query = query.ilike('customer_name', `%${customer}%`)
+    if (station)  query = query.eq('distribution_station', station)
 
     if (filter === 'sent')        query = query.eq('whatsapp_sent', true)
     if (filter === 'unsent')      query = query.eq('whatsapp_sent', false)
@@ -47,13 +49,14 @@ export async function POST(req: NextRequest) {
     const records = rows
       .filter(r => r.order_number || r.phone)
       .map(r => ({
-        order_number:  String(r.order_number  || ''),
-        customer_name: String(r.customer_name || ''),
-        phone:         String(r.phone         || ''),
-        items:         r.items    ?? [],
-        raw_row:       r.raw_row  ?? {},
-        sheet_name:    sheetName,
-        excel_source:  excelSource,
+        order_number:          String(r.order_number          || ''),
+        customer_name:         String(r.customer_name         || ''),
+        phone:                 String(r.phone                 || ''),
+        distribution_station:  String(r.distribution_station || '') || null,
+        items:                 r.items    ?? [],
+        raw_row:               r.raw_row  ?? {},
+        sheet_name:            sheetName,
+        excel_source:          excelSource,
       }))
 
     const skipped = rows.length - records.length

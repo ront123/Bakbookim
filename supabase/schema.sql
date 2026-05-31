@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS orders (
   order_number    TEXT NOT NULL,
   customer_name   TEXT,
   phone           TEXT,
+  distribution_station TEXT,
   items           JSONB DEFAULT '[]',
   raw_row         JSONB DEFAULT '{}',
   sheet_name      TEXT,
@@ -43,6 +44,7 @@ CREATE TRIGGER orders_updated_at
 
 CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders (customer_name);
 CREATE INDEX IF NOT EXISTS idx_orders_phone    ON orders (phone);
+CREATE INDEX IF NOT EXISTS idx_orders_station  ON orders (distribution_station);
 CREATE INDEX IF NOT EXISTS idx_orders_created  ON orders (created_at DESC);
 
 -- ──────────────────────────────────────────────────────────
