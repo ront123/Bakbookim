@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+@theme {
+  --font-rubik: 'Rubik', sans-serif;
+
+  /* Wine-themed color palette */
+  --color-bg:        #0d0f18;
+  --color-surface:   #13161f;
+  --color-card:      #1a1d2e;
+  --color-border:    #252840;
+  --color-border-light: #2e3250;
+
+  --color-accent:    #7c3aed;
+  --color-accent-light: #8b5cf6;
+  --color-accent-dim: rgba(124,58,237,0.15);
+
+  --color-wine:      #9b1d42;
+  --color-wine-light: #c23a62;
+
+  --color-green:     #10b981;
+  --color-green-dim: rgba(16,185,129,0.15);
+  --color-blue:      #3b82f6;
+  --color-blue-dim:  rgba(59,130,246,0.15);
+  --color-amber:     #f59e0b;
+  --color-amber-dim: rgba(245,158,11,0.15);
+
+  --color-text:      #e8eaf0;
+  --color-text-dim:  #8890a8;
+  --color-text-muted: #545878;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-rubik), 'Rubik', sans-serif;
+  min-height: 100vh;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--color-surface); }
+::-webkit-scrollbar-thumb { background: var(--color-border-light); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-accent); }
+
+/* Selection */
+::selection { background: var(--color-accent-dim); color: var(--color-accent-light); }
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+.animate-fade-in  { animation: fadeIn 0.25s ease both; }
+.animate-slide-down { animation: slideDown 0.2s ease both; }
+.animate-spin     { animation: spin 0.8s linear infinite; }
+.animate-pulse    { animation: pulse 1.5s ease-in-out infinite; }
+
+/* Glass card */
+.glass {
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  backdrop-filter: blur(12px);
+}
+
+/* Skeleton shimmer */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-card) 25%,
+    var(--color-border) 50%,
+    var(--color-card) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease infinite;
+  border-radius: 6px;
+}
